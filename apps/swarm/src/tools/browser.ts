@@ -18,63 +18,92 @@ async function execInBrowser(issueIdentifier: string, script: string): Promise<s
     "kubectl",
     [
       "exec", name, "-n", SANDBOX_NAMESPACE, "-c", "browser",
+      "--", "npx", "playwright", "test", "--config=/dev/null", "-x",
+    ],
+    { timeout: 120_000 },
+  );
+  // Fallback: just run node directly with the script
+  // The playwright image has node + playwright pre-installed
+  const { stdout: result } = await exec(
+    "kubectl",
+    [
+      "exec", name, "-n", SANDBOX_NAMESPACE, "-c", "browser",
       "--", "node", "-e", script,
     ],
-    { timeout: 60_000 },
+    { timeout: 120_000 },
+  );
+  return result.trim();
+}
+
+// Simpler exec that just runs node in the browser container
+async function nodeInBrowser(issueIdentifier: string, script: string): Promise<string> {
+  const name = podName(issueIdentifier);
+  const { stdout } = await exec(
+    "kubectl",
+    [
+      "exec", name, "-n", SANDBOX_NAMESPACE, "-c", "browser",
+      "--", "node", "-e", script,
+    ],
+    { timeout: 120_000 },
   );
   return stdout.trim();
 }
 
 export const browserNavigate = tool(
   "browser_navigate",
-  "Navigate the Playwright browser in the sandbox to a URL.",
+  "Navigate the Playwright browser in the sandbox to a URL and return the page title and content summary.",
   {
     issueIdentifier: z.string().describe("Linear issue identifier of the sandbox"),
-    url: z.string().describe("URL to navigate to"),
+    url: z.string().describe("URL to navigate to (use localhost:8000 for the app container)"),
   },
   async ({ issueIdentifier, url }) => {
     const script = `
       const { chromium } = require('playwright');
       (async () => {
-        const browser = await chromium.launch();
+        const browser = await chromium.launch({ args: ['--no-sandbox'] });
         const page = await browser.newPage();
-        await page.goto('${url.replace(/'/g, "\\'")}');
+        await page.goto(${JSON.stringify(url)}, { waitUntil: 'networkidle', timeout: 30000 });
         console.log('Title:', await page.title());
         console.log('URL:', page.url());
+        const text = await page.innerText('body').catch(() => '');
+        console.log('Body preview:', text.slice(0, 500));
         await browser.close();
       })();
     `;
-    const result = await execInBrowser(issueIdentifier, script);
+    const result = await nodeInBrowser(issueIdentifier, script);
     return { content: [{ type: "text" as const, text: result }] };
   },
 );
 
 export const browserScreenshot = tool(
   "browser_screenshot",
-  "Take a screenshot of the current page in the sandbox browser.",
+  "Take a screenshot of a page in the sandbox browser. Returns base64-encoded PNG.",
   {
     issueIdentifier: z.string().describe("Linear issue identifier of the sandbox"),
-    url: z.string().describe("URL to screenshot"),
+    url: z.string().describe("URL to screenshot (use localhost:8000 for the app container)"),
+    fullPage: z.boolean().optional().describe("Capture full scrollable page (default true)"),
   },
-  async ({ issueIdentifier, url }) => {
-    const name = podName(issueIdentifier);
+  async ({ issueIdentifier, url, fullPage }) => {
     const script = `
       const { chromium } = require('playwright');
       (async () => {
-        const browser = await chromium.launch();
-        const page = await browser.newPage();
-        await page.goto('${url.replace(/'/g, "\\'")}');
-        await page.screenshot({ path: '/tmp/screenshot.png', fullPage: true });
-        const fs = require('fs');
-        const data = fs.readFileSync('/tmp/screenshot.png');
-        console.log(data.toString('base64'));
+        const browser = await chromium.launch({ args: ['--no-sandbox'] });
+        const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+        await page.goto(${JSON.stringify(url)}, { waitUntil: 'networkidle', timeout: 30000 });
+        const buf = await page.screenshot({ fullPage: ${fullPage !== false} });
+        process.stdout.write(buf.toString('base64'));
         await browser.close();
       })();
     `;
-    const base64 = await execInBrowser(issueIdentifier, script);
+    const base64 = await nodeInBrowser(issueIdentifier, script);
+    const sizeKb = Math.round(base64.length * 3 / 4 / 1024);
     return {
       content: [
-        { type: "text" as const, text: `Screenshot taken (${Math.round(base64.length * 3 / 4 / 1024)}KB). Base64 data available.` },
+        {
+          type: "image" as const,
+          source: { type: "base64" as const, media_type: "image/png" as const, data: base64 },
+        },
+        { type: "text" as const, text: `Screenshot of ${url} (${sizeKb}KB)` },
       ],
     };
   },
@@ -82,7 +111,7 @@ export const browserScreenshot = tool(
 
 export const browserClick = tool(
   "browser_click",
-  "Click an element on a page in the sandbox browser.",
+  "Click an element on a page in the sandbox browser and return the result.",
   {
     issueIdentifier: z.string().describe("Linear issue identifier of the sandbox"),
     url: z.string().describe("URL to navigate to"),
@@ -92,17 +121,18 @@ export const browserClick = tool(
     const script = `
       const { chromium } = require('playwright');
       (async () => {
-        const browser = await chromium.launch();
+        const browser = await chromium.launch({ args: ['--no-sandbox'] });
         const page = await browser.newPage();
-        await page.goto('${url.replace(/'/g, "\\'")}');
-        await page.click('${selector.replace(/'/g, "\\'")}');
+        await page.goto(${JSON.stringify(url)}, { waitUntil: 'networkidle', timeout: 30000 });
+        await page.click(${JSON.stringify(selector)});
         await page.waitForTimeout(1000);
-        console.log('Clicked:', '${selector}');
+        console.log('Clicked:', ${JSON.stringify(selector)});
         console.log('Current URL:', page.url());
+        console.log('Title:', await page.title());
         await browser.close();
       })();
     `;
-    const result = await execInBrowser(issueIdentifier, script);
+    const result = await nodeInBrowser(issueIdentifier, script);
     return { content: [{ type: "text" as const, text: result }] };
   },
 );
@@ -120,15 +150,15 @@ export const browserFill = tool(
     const script = `
       const { chromium } = require('playwright');
       (async () => {
-        const browser = await chromium.launch();
+        const browser = await chromium.launch({ args: ['--no-sandbox'] });
         const page = await browser.newPage();
-        await page.goto('${url.replace(/'/g, "\\'")}');
-        await page.fill('${selector.replace(/'/g, "\\'")}', '${value.replace(/'/g, "\\'")}');
-        console.log('Filled:', '${selector}', 'with:', '${value}');
+        await page.goto(${JSON.stringify(url)}, { waitUntil: 'networkidle', timeout: 30000 });
+        await page.fill(${JSON.stringify(selector)}, ${JSON.stringify(value)});
+        console.log('Filled:', ${JSON.stringify(selector)}, 'with:', ${JSON.stringify(value)});
         await browser.close();
       })();
     `;
-    const result = await execInBrowser(issueIdentifier, script);
+    const result = await nodeInBrowser(issueIdentifier, script);
     return { content: [{ type: "text" as const, text: result }] };
   },
 );
