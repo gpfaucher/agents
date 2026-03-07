@@ -36,7 +36,16 @@ For each acceptance criterion, check if the diff addresses it. Look for:
 - Junk — debug logs, commented code, unrelated changes
 Do NOT review style/architecture.
 
-### 3. Sandbox Verification (for data/API changes)
+### 3. UI Verification (for frontend/UI changes)
+If the ticket involves UI changes, styling, or component modifications:
+- sandbox_create to get a running app environment with browser sidecar.
+- browser_navigate to the affected page(s).
+- browser_screenshot to capture the current state and visually verify the fix.
+- Compare before/after if possible — check that the UI matches the expected design.
+- browser_click / browser_fill to test interactive elements if applicable.
+- sandbox_destroy when done.
+
+### 4. Sandbox Verification (for data/API changes)
 If the ticket involves database changes, API integrations, or Ultimo interactions:
 - sandbox_create with a DB dump to get a real environment.
 - sandbox_db_query to verify migrations and data integrity.
@@ -47,13 +56,13 @@ If the ticket involves database changes, API integrations, or Ultimo interaction
 
 - sandbox_destroy when done.
 
-### 4. Submit Review
+### 5. Submit Review
 - Use pr_review_with_comments for detailed line-by-line feedback with code suggestions.
-- **Approve**: Move to "${STATUS.DONE}" with linear_update_issue_state.
+- **Approve**: Move to "${STATUS.READY_FOR_RELEASE}" with linear_update_issue_state.
 - **Request Changes**: Move to "${STATUS.IN_DEVELOPMENT}" with linear_update_issue_state. Be specific about what needs fixing.
 - Post a summary comment on Linear.
 
-### 5. Cleanup
+### 6. Cleanup
 - git_cleanup_worktree.
 
 ## Rules
@@ -88,7 +97,7 @@ If the ticket involves database changes, API integrations, or Ultimo interaction
     stateName: STATUS.IN_REVIEW,
   },
   inProgressState: STATUS.IN_REVIEW,
-  doneState: STATUS.DONE,
+  doneState: STATUS.READY_FOR_RELEASE,
   hasDevAgent: true,
   maxTurns: 50,
   model: "claude-sonnet-4-6",
