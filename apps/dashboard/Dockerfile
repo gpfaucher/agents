@@ -3,10 +3,9 @@ FROM golang:1.23-alpine AS builder
 RUN apk add --no-cache gcc musl-dev
 
 WORKDIR /app
-COPY go.mod go.sum* ./
-RUN go mod download 2>/dev/null || true
+COPY go.mod ./
 COPY . .
-RUN CGO_ENABLED=1 go build -o dashboard .
+RUN go mod tidy && CGO_ENABLED=1 go build -o dashboard .
 
 FROM alpine:3.20
 

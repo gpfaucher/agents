@@ -11,15 +11,13 @@ import (
 	"github.com/gpfaucher/agents/apps/dashboard/internal/store"
 )
 
-//go:embed ../../static
-var staticFS embed.FS
-
 type Server struct {
-	store *store.Store
+	store    *store.Store
+	staticFS embed.FS
 }
 
-func New(s *store.Store) *Server {
-	return &Server{store: s}
+func New(s *store.Store, staticFS embed.FS) *Server {
+	return &Server{store: s, staticFS: staticFS}
 }
 
 func (s *Server) Router() http.Handler {
@@ -41,7 +39,7 @@ func (s *Server) Router() http.Handler {
 	r.Get("/api/runs", h.ListRuns)
 
 	// Static files
-	sub, _ := fs.Sub(staticFS, "static")
+	sub, _ := fs.Sub(s.staticFS, "static")
 	r.Handle("/static/*", http.StripPrefix("/static/", http.FileServer(http.FS(sub))))
 
 	return r
