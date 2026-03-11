@@ -136,7 +136,6 @@ export async function invokeAgent(
           maxTurns: role.maxTurns,
           systemPrompt: role.systemPrompt,
           allowedTools: ["Skill"],
-          settingSources: ["project"],
           effort: role.effort ?? "high",
           maxBudgetUsd: role.maxBudgetUsd,
           disallowedTools: role.disallowedTools,
