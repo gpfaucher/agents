@@ -1,4 +1,4 @@
-"""Lightweight embedding server using sentence-transformers."""
+"""Lightweight embedding server using sentence-transformers (all-MiniLM-L6-v2)."""
 import os
 import json
 from http.server import HTTPServer, BaseHTTPRequestHandler

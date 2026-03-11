@@ -1,3 +1,4 @@
+// Agent Swarm — autonomous multi-agent system
 import { loadRole } from "./roles/index.js";
 import { initTracing } from "./lib/tracing.js";
 import { logRepoMap, parseRepoMap } from "./lib/repos.js";
