@@ -4,6 +4,7 @@ import { initTracing } from "./lib/tracing.js";
 import { logRepoMap, parseRepoMap } from "./lib/repos.js";
 import { startPoller } from "./poller.js";
 import { startIndexer } from "./lib/indexer.js";
+import { startWebhookServer } from "./webhook.js";
 
 const REPOS_DIR = "/data/repos";
 
@@ -27,7 +28,13 @@ async function main() {
     });
   }
 
-  startPoller(role);
+  // Start webhook server for event-driven triggers (all pods)
+  if (process.env.WEBHOOK_ENABLED !== "false") {
+    startWebhookServer(role);
+  }
+
+  // Start poller (cleans up stale worktrees, then begins polling)
+  await startPoller(role);
 }
 
 main().catch((err) => {

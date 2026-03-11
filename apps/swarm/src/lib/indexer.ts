@@ -289,16 +289,31 @@ async function ensureCollection(): Promise<void> {
 /**
  * Index a repository. Incremental: skips files whose content hash hasn't changed.
  * Returns { indexed, skipped, total } counts.
+ *
+ * @param changedFiles — optional list of relative file paths to index (for targeted reindex).
+ *   When provided, only these files are processed instead of walking the entire repo.
  */
 export async function indexRepo(
   repoDir: string,
   repoName: string,
+  changedFiles?: string[],
 ): Promise<{ indexed: number; skipped: number; total: number }> {
-  const files = await walkDir(repoDir, repoDir);
+  let filesToProcess: string[];
+
+  if (changedFiles && changedFiles.length > 0) {
+    // Targeted reindex: only process the specified files
+    filesToProcess = changedFiles
+      .filter((f) => shouldIndex(f))
+      .map((f) => join(repoDir, f));
+  } else {
+    // Full walk
+    filesToProcess = await walkDir(repoDir, repoDir);
+  }
+
   const allChunks: Chunk[] = [];
   let skipped = 0;
 
-  for (const filePath of files) {
+  for (const filePath of filesToProcess) {
     try {
       const content = await readFile(filePath, "utf-8");
       if (content.length > 500_000) continue; // Skip very large files
@@ -351,7 +366,7 @@ export async function indexRepo(
     }
   }
 
-  return { indexed: allChunks.length, skipped, total: files.length };
+  return { indexed: allChunks.length, skipped, total: filesToProcess.length };
 }
 
 // ─── Startup ─────────────────────────────────────────────────────────

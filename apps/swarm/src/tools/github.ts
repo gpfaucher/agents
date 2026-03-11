@@ -140,19 +140,38 @@ export const gitCleanupWorktree = tool(
 
 export const reindexRepo = tool(
   "reindex_repo",
-  "Trigger re-indexing of a repository in the vector search database. Use after pushing significant changes so codebase_search returns up-to-date results.",
+  "Trigger re-indexing of a repository in the vector search database. Use after pushing significant changes so codebase_search returns up-to-date results. When branch is provided, only indexes files changed vs main (much faster).",
   {
     repoDir: z.string().describe("Path to the repo directory, e.g. '/data/repos/paddock-app'"),
     repoName: z.string().describe("Repository name, e.g. 'paddock-app'"),
+    branch: z.string().optional().describe("Branch name to diff against main. When provided, only changed files are re-indexed."),
   },
-  async ({ repoDir, repoName }) => {
+  async ({ repoDir, repoName, branch }) => {
     try {
       const { indexRepo } = await import("../lib/indexer.js");
-      const { indexed, skipped, total } = await indexRepo(repoDir, repoName);
+
+      let changedFiles: string[] | undefined;
+      if (branch) {
+        // Get list of changed files vs main
+        try {
+          const { stdout } = await exec("git", ["diff", "--name-only", "origin/main...HEAD"], {
+            cwd: repoDir.startsWith("/data/worktrees/") ? repoDir : repoDir,
+            timeout: 30_000,
+          });
+          changedFiles = stdout.trim().split("\n").filter(Boolean);
+          console.log(`[reindex] Found ${changedFiles.length} changed files on branch ${branch}`);
+        } catch {
+          // Fallback to full reindex if git diff fails
+          console.warn(`[reindex] git diff failed, falling back to full reindex`);
+        }
+      }
+
+      const { indexed, skipped, total } = await indexRepo(repoDir, repoName, changedFiles);
+      const mode = changedFiles ? `incremental (${changedFiles.length} files from diff)` : "full";
       return {
         content: [{
           type: "text" as const,
-          text: `Re-indexed ${repoName}: ${indexed} chunks from ${total - skipped} changed files (${skipped} unchanged)`,
+          text: `Re-indexed ${repoName} [${mode}]: ${indexed} chunks from ${total - skipped} changed files (${skipped} unchanged)`,
         }],
       };
     } catch (err) {

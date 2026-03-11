@@ -7,6 +7,8 @@ mkdir -p /data/repos /data/worktrees
 
 # Link superpowers skills into each repo's .claude/skills/ directory.
 # The SDK loads skills from cwd (the repo dir) via settingSources: ["project"].
+# Also remove any project .mcp.json to prevent loading unwanted MCP servers
+# (e.g. playwright, next-devtools) from target repos.
 link_skills() {
   for repo_dir in /data/repos/*/; do
     [ -d "$repo_dir" ] || continue
@@ -18,6 +20,8 @@ link_skills() {
         ln -s "$skill_dir" "$repo_dir/.claude/skills/$skill_name"
       fi
     done
+    # Remove project MCP configs to prevent agents from loading unwanted MCP servers
+    rm -f "$repo_dir/.mcp.json" "$repo_dir/.claude/mcp.json"
   done
 }
 

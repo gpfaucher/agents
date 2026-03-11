@@ -135,6 +135,7 @@ export async function invokeAgent(
           allowDangerouslySkipPermissions: true,
           maxTurns: role.maxTurns,
           systemPrompt: role.systemPrompt,
+          settingSources: ["project"],
           allowedTools: ["Skill"],
           effort: role.effort ?? "high",
           maxBudgetUsd: role.maxBudgetUsd,
