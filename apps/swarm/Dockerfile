@@ -40,6 +40,7 @@ WORKDIR /app
 COPY package.json ./
 RUN npm install --omit=dev --legacy-peer-deps
 COPY --from=builder /app/dist/ dist/
+COPY .claude/skills/ /app/.claude/skills/
 COPY entrypoint.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh \
   && mkdir -p /data/repo /data/worktrees /home/node/.claude \

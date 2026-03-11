@@ -51,18 +51,46 @@ async function run(cmd: string, args: string[], cwd: string) {
 
 export const gitCreateWorktree = tool(
   "git_create_worktree",
-  "Create a git worktree for isolated development on a new branch.",
+  "Create a git worktree for development. Creates a new branch from baseBranch, or checks out an existing remote branch if it already exists (e.g. for returning review tickets).",
   {
     repoDir: z.string().describe("Path to the cloned repo, e.g. '/data/repos/paddock-app'"),
-    branch: z.string().describe("New branch name, e.g. 'agent/FOO-123'"),
-    baseBranch: z.string().default("main").describe("Base branch to fork from"),
+    branch: z.string().describe("Branch name, e.g. 'agent/FOO-123'"),
+    baseBranch: z.string().default("main").describe("Base branch to fork from (ignored if branch already exists on remote)"),
   },
   async ({ repoDir, branch, baseBranch }) => {
     const worktreeDir = `/data/worktrees/${branch}`;
-    await run("git", ["fetch", "origin", baseBranch], repoDir);
-    await run("git", ["worktree", "add", "-b", branch, worktreeDir, `origin/${baseBranch}`], repoDir);
+
+    // Fetch everything so we can detect if the branch exists
+    await run("git", ["fetch", "origin"], repoDir);
+
+    // Check if branch already exists on remote
+    let branchExists = false;
+    try {
+      await run("git", ["rev-parse", "--verify", `origin/${branch}`], repoDir);
+      branchExists = true;
+    } catch {
+      // Branch doesn't exist on remote — will create new
+    }
+
+    if (branchExists) {
+      // Checkout existing branch (returning from review)
+      await run("git", ["worktree", "add", worktreeDir, `origin/${branch}`], repoDir);
+      // Ensure local branch tracks remote
+      await run("git", ["checkout", "-B", branch, `origin/${branch}`], worktreeDir);
+    } else {
+      // Create new branch from base
+      await run("git", ["worktree", "add", "-b", branch, worktreeDir, `origin/${baseBranch}`], repoDir);
+    }
+
     await installDeps(worktreeDir);
-    return { content: [{ type: "text" as const, text: `Worktree created at ${worktreeDir} on branch ${branch} (dependencies installed)` }] };
+    return {
+      content: [{
+        type: "text" as const,
+        text: branchExists
+          ? `Worktree created at ${worktreeDir} on existing branch ${branch} (dependencies installed)`
+          : `Worktree created at ${worktreeDir} on new branch ${branch} from ${baseBranch} (dependencies installed)`,
+      }],
+    };
   },
 );
 
@@ -107,6 +135,30 @@ export const gitCleanupWorktree = tool(
     const worktreeDir = `/data/worktrees/${branch}`;
     await run("git", ["worktree", "remove", worktreeDir], repoDir);
     return { content: [{ type: "text" as const, text: `Worktree removed for ${branch}` }] };
+  },
+);
+
+export const reindexRepo = tool(
+  "reindex_repo",
+  "Trigger re-indexing of a repository in the vector search database. Use after pushing significant changes so codebase_search returns up-to-date results.",
+  {
+    repoDir: z.string().describe("Path to the repo directory, e.g. '/data/repos/paddock-app'"),
+    repoName: z.string().describe("Repository name, e.g. 'paddock-app'"),
+  },
+  async ({ repoDir, repoName }) => {
+    try {
+      const { indexRepo } = await import("../lib/indexer.js");
+      const { indexed, skipped, total } = await indexRepo(repoDir, repoName);
+      return {
+        content: [{
+          type: "text" as const,
+          text: `Re-indexed ${repoName}: ${indexed} chunks from ${total - skipped} changed files (${skipped} unchanged)`,
+        }],
+      };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return { content: [{ type: "text" as const, text: `Re-index failed (Qdrant may not be available): ${msg}` }] };
+    }
   },
 );
 

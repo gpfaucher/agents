@@ -1,0 +1,31 @@
+name: Build Embeddings
+
+on:
+  push:
+    branches: [main]
+    paths: ["apps/embeddings/**"]
+
+jobs:
+  build:
+    runs-on: k3s-agents-runners
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: |
+          cd apps/embeddings
+          docker build -t registry.registry.svc.cluster.local:5000/agent-embeddings:${{ github.sha }} .
+          docker tag registry.registry.svc.cluster.local:5000/agent-embeddings:${{ github.sha }} registry.registry.svc.cluster.local:5000/agent-embeddings:latest
+
+      - name: Push to internal registry
+        run: |
+          docker push registry.registry.svc.cluster.local:5000/agent-embeddings:${{ github.sha }}
+          docker push registry.registry.svc.cluster.local:5000/agent-embeddings:latest
+
+      - name: Notify faucher.dev
+        run: |
+          curl -X POST \
+            -H "Authorization: token ${{ secrets.FAUCHER_DEV_TOKEN }}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            https://api.github.com/repos/gpfaucher/faucher.dev/dispatches \
+            -d '{"event_type":"image-update","client_payload":{"image":"agent-embeddings","tag":"${{ github.sha }}"}}'

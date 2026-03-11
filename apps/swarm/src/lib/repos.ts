@@ -17,7 +17,7 @@ export interface RepoContext {
  * Parse REPO_MAP env var: "paddock-app=Pontifexx-Tech/paddock-app,pfx-planning=Pontifexx-Tech/pfx-planning"
  * Keys are matched against Linear issue labels prefixed with "repo:" (e.g. label "repo:paddock-app").
  */
-function parseRepoMap(): Map<string, string> {
+export function parseRepoMap(): Map<string, string> {
   const raw = process.env.REPO_MAP ?? "";
   const map = new Map<string, string>();
   for (const entry of raw.split(",").filter(Boolean)) {

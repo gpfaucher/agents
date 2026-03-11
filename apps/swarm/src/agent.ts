@@ -5,6 +5,7 @@ import {
   type SubagentStopHookInput,
 } from "@anthropic-ai/claude-agent-sdk";
 import { traceAgent } from "./lib/tracing.js";
+import { updateRateLimitState } from "./lib/rate-limiter.js";
 import type { RoleConfig } from "./roles/index.js";
 import type { RepoContext } from "./lib/repos.js";
 
@@ -109,10 +110,11 @@ export async function invokeAgent(
             "Use for implementing features, fixing bugs, refactoring code, " +
             "running tests, and any task that requires reading/writing files or executing commands.",
           prompt:
-            "You are an autonomous dev agent. Implement tasks fully. " +
+            "You are an autonomous dev agent working on Pontifexx projects. Implement tasks fully. " +
             "Do not ask questions — make reasonable decisions and proceed.",
           model: role.devAgentModel ?? "opus",
-          tools: role.devAgentTools,
+          tools: [...(role.devAgentTools ?? []), "Skill"],
+          skills: role.devAgentSkills,
           maxTurns: role.devAgentMaxTurns,
           mcpServers: [mcpServerName],
           criticalSystemReminder_EXPERIMENTAL:
@@ -133,10 +135,10 @@ export async function invokeAgent(
           allowDangerouslySkipPermissions: true,
           maxTurns: role.maxTurns,
           systemPrompt: role.systemPrompt,
+          allowedTools: ["Skill"],
           settingSources: ["project"],
           effort: role.effort ?? "high",
           maxBudgetUsd: role.maxBudgetUsd,
-          fallbackModel: role.fallbackModel,
           disallowedTools: role.disallowedTools,
           hooks: {
             PostToolUse: [{ matcher: "^mcp__", hooks: [mcpAuditHook] }],
@@ -153,6 +155,12 @@ export async function invokeAgent(
       try {
         for await (const message of session) {
           console.log(formatMessage(message));
+
+          // Track rate limit events for work window management
+          if (message.type === "rate_limit_event") {
+            updateRateLimitState(message as any);
+          }
+
           if (message.type === "result") {
             const msg = message as any;
             costUsd = msg.total_cost_usd ?? 0;

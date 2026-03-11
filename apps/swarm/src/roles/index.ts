@@ -1,6 +1,8 @@
 import { role as pmRole } from "./pm.js";
 import { role as engineerRole } from "./engineer.js";
 import { role as testerRole } from "./qa.js";
+import { role as securityRole } from "./security.js";
+import { role as docsRole } from "./docs.js";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export interface RoleConfig {
@@ -20,7 +22,7 @@ export interface RoleConfig {
   /** State to move issue to when work is complete */
   doneState: string;
   /** Whether the poller should auto-move to doneState after the agent completes (default: true).
-   *  Set to false when the agent manages its own state transitions (e.g. PM may move to "Waiting"). */
+   *  Set to false when the agent manages its own state transitions (e.g. Architect may move to "On Hold"). */
   autoMoveToDone?: boolean;
   /** Whether this role has the dev-agent subagent */
   hasDevAgent: boolean;
@@ -34,20 +36,24 @@ export interface RoleConfig {
   effort?: "low" | "medium" | "high" | "max";
   /** Maximum budget in USD per session */
   maxBudgetUsd?: number;
-  /** Fallback model when primary is rate-limited */
-  fallbackModel?: string;
   /** Built-in tools to block (overrides bypassPermissions) */
   disallowedTools?: string[];
   /** Tools the dev-agent is allowed to use */
   devAgentTools?: string[];
   /** Max turns for the dev-agent per invocation */
   devAgentMaxTurns?: number;
+  /** Skills to preload into the dev-agent's context */
+  devAgentSkills?: string[];
+  /** Label used to identify On Hold tickets belonging to this agent (e.g. "hold:pm") */
+  holdLabel?: string;
 }
 
 const roles: Record<string, RoleConfig> = {
   pm: pmRole,
   engineer: engineerRole,
   tester: testerRole,
+  security: securityRole,
+  docs: docsRole,
 };
 
 export function loadRole(): RoleConfig {

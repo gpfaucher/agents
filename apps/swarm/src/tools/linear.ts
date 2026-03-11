@@ -172,6 +172,70 @@ export const linearCreateIssue = tool(
   },
 );
 
+/**
+ * Create a hold-for-input tool scoped to a specific agent role.
+ * When a ticket is put on hold, it gets a "hold:<role>" label so only the
+ * originating agent picks it back up when the user responds.
+ */
+export function createHoldForInputTool(agentRole: string) {
+  return tool(
+    "linear_hold_for_input",
+    "Put a ticket on hold and tag the user with questions. Use this whenever you need clarification or have questions before proceeding.",
+    {
+      issueId: z.string().describe("Issue ID (UUID) or identifier (e.g. ENG-123)"),
+      questions: z.string().describe("Your questions in markdown. Be specific about what you need to know."),
+    },
+    async ({ issueId, questions }) => {
+      const client = getClient();
+      const issue = await client.issue(issueId);
+      const team = await issue.team;
+      if (!team) throw new Error("Issue has no team");
+
+      // Move to On Hold
+      const states = await team.states();
+      const onHold = states.nodes.find(
+        (s) => s.name.toLowerCase() === (process.env.STATUS_ON_HOLD || "On Hold").toLowerCase(),
+      );
+      if (!onHold) {
+        const available = states.nodes.map((s) => s.name).join(", ");
+        throw new Error(`State 'On Hold' not found. Available: ${available}`);
+      }
+
+      // Add a "hold:<role>" label so only this agent picks the ticket back up.
+      const holdLabelName = `hold:${agentRole}`;
+      const teamLabels = await team.labels();
+      let holdLabel = teamLabels.nodes.find(
+        (l) => l.name.toLowerCase() === holdLabelName.toLowerCase(),
+      );
+      if (!holdLabel) {
+        try {
+          const result = await client.createIssueLabel({ name: holdLabelName, teamId: team.id });
+          holdLabel = await result.issueLabel;
+        } catch {
+          // Label may already exist at org level — continue without it
+        }
+      }
+
+      const existingLabels = await issue.labels();
+      const labelIds = existingLabels.nodes.map((l) => l.id);
+      if (holdLabel) labelIds.push(holdLabel.id);
+
+      await client.updateIssue(issue.id, { stateId: onHold.id, labelIds });
+
+      // Get the token owner to @mention
+      const viewer = await client.viewer;
+      const mention = viewer.displayName || viewer.name;
+
+      const body = `**Questions before proceeding:**\n\n${questions}\n\n@${mention}`;
+      await client.createComment({ issueId: issue.id, body });
+
+      return {
+        content: [{ type: "text" as const, text: `${issue.identifier} moved to On Hold. Tagged @${mention} with questions.` }],
+      };
+    },
+  );
+}
+
 /** Query Linear for issues matching a filter. Used by the poller. */
 export async function queryIssues(filter: {
   label?: string;

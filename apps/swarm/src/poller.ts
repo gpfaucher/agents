@@ -2,20 +2,42 @@ import type { RoleConfig } from "./roles/index.js";
 import { queryIssues, moveIssue } from "./tools/linear.js";
 import { invokeAgent } from "./agent.js";
 import { getRepoForIssue, ensureRepoCloned, type RepoContext } from "./lib/repos.js";
+import { getWaitTimeMs, isWarning } from "./lib/rate-limiter.js";
 
 const POLL_INTERVAL_MS = Number(process.env.POLL_INTERVAL_MS) || 2 * 60 * 1000;
 const MAX_CONCURRENT = Number(process.env.MAX_CONCURRENT) || 1;
+const WORK_WINDOW_ENABLED = process.env.WORK_WINDOW_ENABLED !== "false";
 
 /** Issues currently being worked on — prevents double-pickup */
 const activeIssues = new Set<string>();
 
 async function poll(role: RoleConfig) {
+  // Check rate limit before picking up work
+  if (WORK_WINDOW_ENABLED) {
+    const waitMs = getWaitTimeMs();
+    if (waitMs > 0) {
+      const waitMin = Math.ceil(waitMs / 60_000);
+      console.log(`[${role.displayName}] Rate limited — pausing for ${waitMin}m (resets at ${new Date(Date.now() + waitMs).toISOString()})`);
+      return;
+    }
+  }
+
   try {
     // queryIssues already returns results sorted by priority (urgent first)
     const issues = await queryIssues(role.pollerFilter);
+    console.log(`[${role.displayName}] Poll found ${issues.length} issue(s)`);
+
+    const onHoldState = (process.env.STATUS_ON_HOLD || "On Hold").toLowerCase();
 
     for (const issue of issues) {
       if (activeIssues.has(issue.id)) continue;
+
+      // On Hold tickets: only pick up if this agent put it on hold (has "hold:<role>" label)
+      if (issue.stateName.toLowerCase() === onHoldState) {
+        if (!role.holdLabel || !issue.labels.includes(role.holdLabel.toLowerCase())) {
+          continue; // Not our ticket to resume
+        }
+      }
 
       // skipQA: if this role is the tester and the issue has "skipqa" label, auto-advance
       if (role.name === "tester" && issue.labels.includes("skipqa")) {
@@ -35,6 +57,14 @@ async function poll(role: RoleConfig) {
       if (!repoCtx) {
         console.warn(
           `[${role.displayName}] No repo:* label found for ${issue.identifier} (or label not in REPO_MAP), skipping`,
+        );
+        continue;
+      }
+
+      // In warning state, only pick up urgent/high priority issues
+      if (WORK_WINDOW_ENABLED && isWarning() && issue.priority > 2) {
+        console.log(
+          `[${role.displayName}] Rate limit warning — deferring non-urgent ${issue.identifier} (priority ${issue.priority})`,
         );
         continue;
       }
@@ -87,13 +117,22 @@ async function processIssue(
     );
   }
 
+  // Detect if this ticket is returning from review (Builder picking up "In Development" that was previously reviewed)
+  const isReturningFromReview =
+    role.name === "engineer" &&
+    issue.stateName.toLowerCase() === (process.env.STATUS_IN_DEVELOPMENT || "In Development").toLowerCase();
+
+  const reviewHint = isReturningFromReview
+    ? `\n\nThis ticket may be returning from review with requested changes. Check the Linear comments for a PR link — if one exists, use gh_get_pr_review_comments to fetch the review feedback and address each comment. Follow step 1b in your workflow.`
+    : "";
+
   const prompt = `You have been assigned Linear issue ${issue.identifier}: "${issue.title}".
 
 Repository: ${repoCtx.githubRepo} (cloned at ${repoCtx.repoDir})
 
 Fetch the full issue details using linear_get_issue, then follow your workflow to complete the task.
 
-Issue identifier: ${issue.identifier}`;
+Issue identifier: ${issue.identifier}${reviewHint}`;
 
   try {
     console.log(`[${role.displayName}] Starting work on ${issue.identifier} in ${repoCtx.githubRepo}`);
@@ -105,7 +144,7 @@ Issue identifier: ${issue.identifier}`;
       `[${role.displayName}] Completed ${issue.identifier}: ${result.numTurns} turns, $${result.costUsd.toFixed(2)}, ${durationStr}`,
     );
 
-    // Post cost summary as Linear comment
+    // Post completion comment on Linear
     try {
       const { LinearClient } = await import("@linear/sdk");
       const client = new LinearClient({ apiKey: process.env.LINEAR_API_KEY! });
@@ -116,6 +155,21 @@ Issue identifier: ${issue.identifier}`;
       });
     } catch {
       // Best effort
+    }
+
+    // Auto-save completion to knowledge base (system-level, doesn't rely on agent remembering)
+    if (process.env.QDRANT_URL) {
+      try {
+        const { knowledgeStoreFromSystem } = await import("./tools/knowledge.js");
+        await knowledgeStoreFromSystem({
+          content: `${role.displayName} (${role.name}) completed ${issue.identifier}: "${issue.title}". ${result.numTurns} turns, $${result.costUsd.toFixed(2)}. Result: ${result.text.slice(0, 500)}`,
+          category: "solution",
+          repo: repoCtx.githubRepo.split("/").pop(),
+          issueIdentifier: issue.identifier,
+        });
+      } catch {
+        // Best effort — don't block completion
+      }
     }
 
     // Report to dashboard if configured
