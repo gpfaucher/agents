@@ -14,6 +14,9 @@ import (
 //go:embed static
 var staticFS embed.FS
 
+//go:embed templates
+var templateFS embed.FS
+
 func main() {
 	port := flag.String("port", getEnv("PORT", "8080"), "HTTP port")
 	dbPath := flag.String("db", getEnv("DB_PATH", "dashboard.db"), "SQLite database path")
@@ -25,7 +28,7 @@ func main() {
 	}
 	defer db.Close()
 
-	srv := server.New(db, staticFS)
+	srv := server.New(db, staticFS, templateFS)
 	log.Printf("Dashboard listening on :%s", *port)
 	if err := http.ListenAndServe(":"+*port, srv.Router()); err != nil {
 		log.Fatal(err)

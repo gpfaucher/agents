@@ -1,0 +1,88 @@
+{{define "title"}}Runs{{end}}
+
+{{define "content"}}
+<div class="flex items-center justify-between mb-8">
+  <div>
+    <h1 class="text-2xl font-bold text-white">Agent Runs</h1>
+    <p class="text-sm text-gray-500 mt-1">{{.TotalCount}} total runs</p>
+  </div>
+</div>
+
+<!-- Filters -->
+<div class="flex gap-3 mb-6">
+  <select id="roleFilter" onchange="applyFilters()" class="bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-300 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none">
+    <option value="">All Agents</option>
+    <option value="pm" {{if eq .FilterRole "pm"}}selected{{end}}>Pieter (PM)</option>
+    <option value="engineer" {{if eq .FilterRole "engineer"}}selected{{end}}>Joseph (Engineer)</option>
+    <option value="tester" {{if eq .FilterRole "tester"}}selected{{end}}>Hassan (Reviewer)</option>
+    <option value="security" {{if eq .FilterRole "security"}}selected{{end}}>Meneer (Security)</option>
+    <option value="docs" {{if eq .FilterRole "docs"}}selected{{end}}>Pierre (Docs)</option>
+  </select>
+  <select id="statusFilter" onchange="applyFilters()" class="bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-300 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none">
+    <option value="">All Statuses</option>
+    <option value="completed" {{if eq .FilterStatus "completed"}}selected{{end}}>Completed</option>
+    <option value="failed" {{if eq .FilterStatus "failed"}}selected{{end}}>Failed</option>
+    <option value="in_progress" {{if eq .FilterStatus "in_progress"}}selected{{end}}>In Progress</option>
+  </select>
+</div>
+
+<!-- Runs table -->
+<div class="bg-gray-900 rounded-xl border border-gray-800">
+  <div class="overflow-x-auto">
+    <table class="w-full">
+      <thead>
+        <tr class="text-xs text-gray-500 uppercase tracking-wider border-b border-gray-800">
+          <th class="px-5 py-3 text-left">Issue</th>
+          <th class="px-5 py-3 text-left">Agent</th>
+          <th class="px-5 py-3 text-right">Cost</th>
+          <th class="px-5 py-3 text-right">Turns</th>
+          <th class="px-5 py-3 text-right">Duration</th>
+          <th class="px-5 py-3 text-left">Status</th>
+          <th class="px-5 py-3 text-right">Time</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-800/50">
+        {{range .Runs}}
+        <tr class="hover:bg-gray-800/30 transition-colors">
+          <td class="px-5 py-3 text-sm font-medium text-white">{{.IssueIdentifier}}</td>
+          <td class="px-5 py-3"><span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium {{agentColor .AgentRole}}">{{agentName .AgentRole}}</span></td>
+          <td class="px-5 py-3 text-sm text-amber-400 text-right font-mono">${{printf "%.2f" .CostUsd}}</td>
+          <td class="px-5 py-3 text-sm text-gray-400 text-right">{{.NumTurns}}</td>
+          <td class="px-5 py-3 text-sm text-gray-400 text-right">{{divMs .DurationMs}}m</td>
+          <td class="px-5 py-3"><span class="inline-flex items-center gap-1 text-xs {{statusColor .Status}}">{{statusDot .Status}}{{.Status}}</span></td>
+          <td class="px-5 py-3 text-xs text-gray-500 text-right">{{timeAgo .CreatedAt}}</td>
+        </tr>
+        {{else}}
+        <tr><td colspan="7" class="px-5 py-12 text-center text-sm text-gray-600">No runs found matching your filters.</td></tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+  {{if gt .TotalCount 50}}
+  <div class="flex items-center justify-between px-5 py-3 border-t border-gray-800">
+    <span class="text-xs text-gray-500">Showing {{len .Runs}} of {{.TotalCount}}</span>
+    <div class="flex gap-2">
+      {{if gt .Offset 0}}
+      <a href="/runs?offset={{prevOffset .Offset}}&role={{.FilterRole}}&status={{.FilterStatus}}" class="px-3 py-1 text-xs bg-gray-800 rounded hover:bg-gray-700 text-gray-300">&larr; Prev</a>
+      {{end}}
+      {{if .HasMore}}
+      <a href="/runs?offset={{nextOffset .Offset}}&role={{.FilterRole}}&status={{.FilterStatus}}" class="px-3 py-1 text-xs bg-gray-800 rounded hover:bg-gray-700 text-gray-300">Next &rarr;</a>
+      {{end}}
+    </div>
+  </div>
+  {{end}}
+</div>
+{{end}}
+
+{{define "scripts"}}
+<script>
+function applyFilters() {
+  const role = document.getElementById('roleFilter').value;
+  const status = document.getElementById('statusFilter').value;
+  const params = new URLSearchParams();
+  if (role) params.set('role', role);
+  if (status) params.set('status', status);
+  window.location.href = '/runs' + (params.toString() ? '?' + params.toString() : '');
+}
+</script>
+{{end}}

@@ -1,0 +1,178 @@
+{{define "title"}}Command Center{{end}}
+
+{{define "content"}}
+<div class="mb-8">
+  <h1 class="text-2xl font-bold text-white">Command Center</h1>
+  <p class="text-sm text-gray-500 mt-1">Overview of your agent swarm</p>
+</div>
+
+<!-- Stats cards -->
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+  <div class="stat-card rounded-xl border border-gray-800 p-5">
+    <div class="flex items-center justify-between mb-3">
+      <span class="text-xs font-medium text-gray-400 uppercase tracking-wider">Today's Cost</span>
+      <div class="w-8 h-8 rounded-lg bg-amber-500/10 flex items-center justify-center">
+        <svg class="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1"/></svg>
+      </div>
+    </div>
+    <div class="text-2xl font-bold text-white">${{printf "%.2f" .Stats.TodayCost}}</div>
+    <div class="text-xs text-gray-500 mt-1">{{.Stats.TodayRuns}} runs today</div>
+  </div>
+
+  <div class="stat-card rounded-xl border border-gray-800 p-5">
+    <div class="flex items-center justify-between mb-3">
+      <span class="text-xs font-medium text-gray-400 uppercase tracking-wider">This Week</span>
+      <div class="w-8 h-8 rounded-lg bg-blue-500/10 flex items-center justify-center">
+        <svg class="w-4 h-4 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+      </div>
+    </div>
+    <div class="text-2xl font-bold text-white">${{printf "%.2f" .Stats.WeekCost}}</div>
+    <div class="text-xs text-gray-500 mt-1">{{.Stats.WeekRuns}} runs this week</div>
+  </div>
+
+  <div class="stat-card rounded-xl border border-gray-800 p-5">
+    <div class="flex items-center justify-between mb-3">
+      <span class="text-xs font-medium text-gray-400 uppercase tracking-wider">Success Rate</span>
+      <div class="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center">
+        <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+      </div>
+    </div>
+    <div class="text-2xl font-bold text-white">{{printf "%.0f" .Stats.SuccessRate}}%</div>
+    <div class="text-xs text-gray-500 mt-1">{{.Stats.TotalRuns}} total runs</div>
+  </div>
+
+  <div class="stat-card rounded-xl border border-gray-800 p-5">
+    <div class="flex items-center justify-between mb-3">
+      <span class="text-xs font-medium text-gray-400 uppercase tracking-wider">Avg per Run</span>
+      <div class="w-8 h-8 rounded-lg bg-purple-500/10 flex items-center justify-center">
+        <svg class="w-4 h-4 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+      </div>
+    </div>
+    <div class="text-2xl font-bold text-white">${{printf "%.2f" .Stats.AvgCostPerRun}}</div>
+    <div class="text-xs text-gray-500 mt-1">~{{divMs .Stats.AvgDurationMs}}m / {{.Stats.AvgTurns}} turns avg</div>
+  </div>
+</div>
+
+<!-- Charts row -->
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+  <div class="lg:col-span-2 bg-gray-900 rounded-xl border border-gray-800 p-6">
+    <h3 class="text-sm font-semibold text-gray-300 mb-4">Cost Trend (14 days)</h3>
+    <canvas id="costChart" height="200"></canvas>
+  </div>
+  <div class="bg-gray-900 rounded-xl border border-gray-800 p-6">
+    <h3 class="text-sm font-semibold text-gray-300 mb-4">Cost by Agent</h3>
+    <canvas id="roleChart" height="200"></canvas>
+  </div>
+</div>
+
+<!-- Recent runs -->
+<div class="bg-gray-900 rounded-xl border border-gray-800">
+  <div class="flex items-center justify-between p-5 border-b border-gray-800">
+    <h3 class="text-sm font-semibold text-gray-300">Recent Runs</h3>
+    <a href="/runs" class="text-xs text-brand-400 hover:text-brand-300">View all &rarr;</a>
+  </div>
+  <div class="overflow-x-auto">
+    <table class="w-full">
+      <thead>
+        <tr class="text-xs text-gray-500 uppercase tracking-wider border-b border-gray-800">
+          <th class="px-5 py-3 text-left">Issue</th>
+          <th class="px-5 py-3 text-left">Agent</th>
+          <th class="px-5 py-3 text-right">Cost</th>
+          <th class="px-5 py-3 text-right">Turns</th>
+          <th class="px-5 py-3 text-right">Duration</th>
+          <th class="px-5 py-3 text-left">Status</th>
+          <th class="px-5 py-3 text-right">Time</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-800/50">
+        {{range .RecentRuns}}
+        <tr class="hover:bg-gray-800/30 transition-colors">
+          <td class="px-5 py-3 text-sm font-medium text-white">{{.IssueIdentifier}}</td>
+          <td class="px-5 py-3"><span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium {{agentColor .AgentRole}}">{{agentName .AgentRole}}</span></td>
+          <td class="px-5 py-3 text-sm text-amber-400 text-right font-mono">${{printf "%.2f" .CostUsd}}</td>
+          <td class="px-5 py-3 text-sm text-gray-400 text-right">{{.NumTurns}}</td>
+          <td class="px-5 py-3 text-sm text-gray-400 text-right">{{divMs .DurationMs}}m</td>
+          <td class="px-5 py-3"><span class="inline-flex items-center gap-1 text-xs {{statusColor .Status}}">{{statusDot .Status}}{{.Status}}</span></td>
+          <td class="px-5 py-3 text-xs text-gray-500 text-right">{{timeAgo .CreatedAt}}</td>
+        </tr>
+        {{else}}
+        <tr><td colspan="7" class="px-5 py-8 text-center text-sm text-gray-600">No runs yet. Agents are waiting for work.</td></tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+</div>
+{{end}}
+
+{{define "scripts"}}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  const dailyData = {{.DailyCostsJSON}};
+  const roleData = {{.RoleCostsJSON}};
+
+  // Cost trend chart
+  if (dailyData && dailyData.length > 0) {
+    new Chart(document.getElementById('costChart'), {
+      type: 'line',
+      data: {
+        labels: dailyData.map(d => d.date.slice(5)),
+        datasets: [{
+          label: 'Daily Cost ($)',
+          data: dailyData.map(d => d.cost),
+          borderColor: '#3b82f6',
+          backgroundColor: 'rgba(59,130,246,0.1)',
+          fill: true,
+          tension: 0.4,
+          pointRadius: 3,
+          pointBackgroundColor: '#3b82f6',
+        }, {
+          label: 'Runs',
+          data: dailyData.map(d => d.runs),
+          borderColor: '#8b5cf6',
+          backgroundColor: 'transparent',
+          tension: 0.4,
+          pointRadius: 3,
+          pointBackgroundColor: '#8b5cf6',
+          yAxisID: 'y1',
+        }]
+      },
+      options: {
+        responsive: true,
+        interaction: { intersect: false, mode: 'index' },
+        plugins: { legend: { labels: { color: '#94a3b8', font: { size: 11 } } } },
+        scales: {
+          x: { grid: { color: '#1e293b' }, ticks: { color: '#64748b', font: { size: 11 } } },
+          y: { grid: { color: '#1e293b' }, ticks: { color: '#64748b', font: { size: 11 }, callback: v => '$'+v.toFixed(2) }, position: 'left' },
+          y1: { grid: { display: false }, ticks: { color: '#64748b', font: { size: 11 } }, position: 'right' },
+        }
+      }
+    });
+  }
+
+  // Role distribution chart
+  if (roleData && roleData.length > 0) {
+    const colors = { pm:'#8b5cf6', engineer:'#3b82f6', tester:'#10b981', security:'#f59e0b', docs:'#ec4899' };
+    const names = { pm:'Pieter', engineer:'Joseph', tester:'Hassan', security:'Meneer', docs:'Pierre' };
+    new Chart(document.getElementById('roleChart'), {
+      type: 'doughnut',
+      data: {
+        labels: roleData.map(d => names[d.agentRole] || d.agentRole),
+        datasets: [{
+          data: roleData.map(d => d.totalCost),
+          backgroundColor: roleData.map(d => colors[d.agentRole] || '#64748b'),
+          borderWidth: 0,
+          hoverOffset: 4,
+        }]
+      },
+      options: {
+        responsive: true,
+        cutout: '65%',
+        plugins: {
+          legend: { position: 'bottom', labels: { color: '#94a3b8', font: { size: 11 }, padding: 12 } },
+        }
+      }
+    });
+  }
+});
+</script>
+{{end}}

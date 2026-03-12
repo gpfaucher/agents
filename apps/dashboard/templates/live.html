@@ -1,0 +1,127 @@
+{{define "title"}}Live{{end}}
+
+{{define "content"}}
+<div class="flex items-center justify-between mb-8">
+  <div>
+    <h1 class="text-2xl font-bold text-white">Live Agents</h1>
+    <p class="text-sm text-gray-500 mt-1">Real-time status of your agent swarm</p>
+  </div>
+  <div class="flex items-center gap-2 text-xs text-gray-500">
+    <span class="w-2 h-2 rounded-full bg-emerald-400 pulse-dot"></span>
+    Auto-refreshing every 10s
+  </div>
+</div>
+
+<div id="agentGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+  <div class="col-span-full text-center py-12 text-gray-600">
+    <svg class="w-8 h-8 mx-auto mb-3 animate-spin text-gray-700" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+    Loading agent status...
+  </div>
+</div>
+{{end}}
+
+{{define "scripts"}}
+<script>
+const agents = [
+  { role: 'pm', name: 'Pieter', title: 'PM / Architect', color: 'purple', endpoint: '/api/agents/status/pm' },
+  { role: 'engineer', name: 'Joseph', title: 'Builder', color: 'blue', endpoint: '/api/agents/status/engineer' },
+  { role: 'tester', name: 'Hassan', title: 'Reviewer', color: 'emerald', endpoint: '/api/agents/status/tester' },
+  { role: 'security', name: 'Meneer', title: 'Security', color: 'amber', endpoint: '/api/agents/status/security' },
+  { role: 'docs', name: 'Pierre', title: 'Docs', color: 'pink', endpoint: '/api/agents/status/docs' },
+];
+
+const colorMap = {
+  purple: { bg: 'bg-purple-500/10', border: 'border-purple-500/30', text: 'text-purple-400', dot: 'bg-purple-400' },
+  blue: { bg: 'bg-blue-500/10', border: 'border-blue-500/30', text: 'text-blue-400', dot: 'bg-blue-400' },
+  emerald: { bg: 'bg-emerald-500/10', border: 'border-emerald-500/30', text: 'text-emerald-400', dot: 'bg-emerald-400' },
+  amber: { bg: 'bg-amber-500/10', border: 'border-amber-500/30', text: 'text-amber-400', dot: 'bg-amber-400' },
+  pink: { bg: 'bg-pink-500/10', border: 'border-pink-500/30', text: 'text-pink-400', dot: 'bg-pink-400' },
+};
+
+function formatUptime(seconds) {
+  if (seconds < 60) return seconds + 's';
+  if (seconds < 3600) return Math.floor(seconds / 60) + 'm';
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  return h + 'h ' + m + 'm';
+}
+
+async function refreshAgents() {
+  const grid = document.getElementById('agentGrid');
+  const cards = [];
+
+  for (const agent of agents) {
+    const c = colorMap[agent.color];
+    try {
+      const res = await fetch(agent.endpoint, { signal: AbortSignal.timeout(3000) });
+      if (!res.ok) throw new Error('offline');
+      const data = await res.json();
+      const active = data.activeIssues && data.activeIssues.length > 0;
+      cards.push(`
+        <div class="bg-gray-900 rounded-xl border ${active ? c.border : 'border-gray-800'} p-5 transition-all">
+          <div class="flex items-start justify-between mb-4">
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 rounded-xl ${c.bg} flex items-center justify-center">
+                <span class="${c.text} text-lg font-bold">${agent.name[0]}</span>
+              </div>
+              <div>
+                <div class="text-sm font-semibold text-white">${agent.name}</div>
+                <div class="text-xs text-gray-500">${agent.title}</div>
+              </div>
+            </div>
+            <div class="flex items-center gap-1.5">
+              <span class="w-2 h-2 rounded-full ${active ? 'bg-emerald-400 pulse-dot' : 'bg-gray-600'}"></span>
+              <span class="text-xs ${active ? 'text-emerald-400' : 'text-gray-500'}">${active ? 'Working' : 'Idle'}</span>
+            </div>
+          </div>
+          <div class="space-y-2">
+            <div class="flex justify-between text-xs">
+              <span class="text-gray-500">Model</span>
+              <span class="text-gray-300 font-mono">${data.model || '?'}</span>
+            </div>
+            <div class="flex justify-between text-xs">
+              <span class="text-gray-500">Uptime</span>
+              <span class="text-gray-300">${formatUptime(data.uptime)}</span>
+            </div>
+            <div class="flex justify-between text-xs">
+              <span class="text-gray-500">Concurrency</span>
+              <span class="text-gray-300">${(data.activeIssues||[]).length}/${data.maxConcurrent}</span>
+            </div>
+            ${active ? `
+            <div class="mt-3 pt-3 border-t border-gray-800">
+              <div class="text-xs text-gray-400 mb-1">Active Issues</div>
+              ${(data.activeIssues||[]).map(id => `<div class="text-xs ${c.text} font-mono">${id}</div>`).join('')}
+            </div>` : ''}
+          </div>
+        </div>
+      `);
+    } catch(e) {
+      cards.push(`
+        <div class="bg-gray-900 rounded-xl border border-gray-800 p-5 opacity-50">
+          <div class="flex items-start justify-between mb-4">
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 rounded-xl bg-gray-800 flex items-center justify-center">
+                <span class="text-gray-500 text-lg font-bold">${agent.name[0]}</span>
+              </div>
+              <div>
+                <div class="text-sm font-semibold text-gray-400">${agent.name}</div>
+                <div class="text-xs text-gray-600">${agent.title}</div>
+              </div>
+            </div>
+            <div class="flex items-center gap-1.5">
+              <span class="w-2 h-2 rounded-full bg-red-500"></span>
+              <span class="text-xs text-red-400">Offline</span>
+            </div>
+          </div>
+        </div>
+      `);
+    }
+  }
+
+  grid.innerHTML = cards.join('');
+}
+
+refreshAgents();
+setInterval(refreshAgents, 10000);
+</script>
+{{end}}

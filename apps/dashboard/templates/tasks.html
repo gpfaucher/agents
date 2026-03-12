@@ -1,0 +1,120 @@
+{{define "title"}}Tasks{{end}}
+
+{{define "content"}}
+<div class="flex items-center justify-between mb-8">
+  <div>
+    <h1 class="text-2xl font-bold text-white">Tasks</h1>
+    <p class="text-sm text-gray-500 mt-1">Create and track tasks for your agent swarm</p>
+  </div>
+  <button onclick="document.getElementById('newTaskModal').classList.remove('hidden')" class="inline-flex items-center gap-2 px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium rounded-lg transition-colors">
+    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+    New Task
+  </button>
+</div>
+
+<!-- Task list -->
+<div class="space-y-3">
+  {{range .Tasks}}
+  <div class="bg-gray-900 rounded-xl border border-gray-800 p-5 hover:border-gray-700 transition-colors">
+    <div class="flex items-start justify-between">
+      <div class="flex-1">
+        <div class="flex items-center gap-3 mb-2">
+          <span class="inline-flex items-center gap-1 text-xs {{statusColor .Status}}">{{statusDot .Status}}{{.Status}}</span>
+          {{if .LinearIdentifier}}
+          <a href="{{.LinearURL}}" target="_blank" class="text-xs text-brand-400 hover:text-brand-300 font-mono">{{.LinearIdentifier}}</a>
+          {{end}}
+          {{if .Repo}}<span class="text-xs text-gray-600">{{.Repo}}</span>{{end}}
+        </div>
+        <h3 class="text-sm font-semibold text-white mb-1">{{.Title}}</h3>
+        {{if .Description}}<p class="text-xs text-gray-400 line-clamp-2">{{.Description}}</p>{{end}}
+      </div>
+      <div class="text-right ml-4">
+        {{if .AgentRole}}<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium {{agentColor .AgentRole}}">{{agentName .AgentRole}}</span>{{end}}
+        <div class="text-xs text-gray-600 mt-1">{{timeAgo .CreatedAt}}</div>
+      </div>
+    </div>
+  </div>
+  {{else}}
+  <div class="bg-gray-900 rounded-xl border border-gray-800 p-12 text-center">
+    <svg class="w-12 h-12 text-gray-700 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
+    <p class="text-sm text-gray-500 mb-4">No tasks yet. Create one to get your agents working.</p>
+    <button onclick="document.getElementById('newTaskModal').classList.remove('hidden')" class="inline-flex items-center gap-2 px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium rounded-lg transition-colors">
+      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+      Create First Task
+    </button>
+  </div>
+  {{end}}
+</div>
+
+<!-- New Task Modal -->
+<div id="newTaskModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+  <div class="bg-gray-900 border border-gray-700 rounded-2xl w-full max-w-lg mx-4 shadow-2xl">
+    <div class="flex items-center justify-between p-5 border-b border-gray-800">
+      <h2 class="text-lg font-semibold text-white">New Task</h2>
+      <button onclick="document.getElementById('newTaskModal').classList.add('hidden')" class="text-gray-500 hover:text-gray-300">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <form id="taskForm" class="p-5 space-y-4">
+      <div>
+        <label class="block text-xs font-medium text-gray-400 mb-1.5">Title</label>
+        <input name="title" required class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none" placeholder="What needs to be done?">
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-gray-400 mb-1.5">Description</label>
+        <textarea name="description" rows="4" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none resize-none" placeholder="Describe the task in detail. Include acceptance criteria, relevant files, etc."></textarea>
+      </div>
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <label class="block text-xs font-medium text-gray-400 mb-1.5">Repository</label>
+          <select name="repo" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-300 focus:border-brand-500 outline-none">
+            <option value="paddock-app">paddock-app</option>
+            <option value="pfx-planning">pfx-planning</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-gray-400 mb-1.5">Priority</label>
+          <select name="priority" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-300 focus:border-brand-500 outline-none">
+            <option value="1">Urgent</option>
+            <option value="2">High</option>
+            <option value="3" selected>Medium</option>
+            <option value="4">Low</option>
+          </select>
+        </div>
+      </div>
+      <div id="taskError" class="hidden text-sm text-red-400 bg-red-400/10 rounded-lg p-3"></div>
+      <div class="flex justify-end gap-3 pt-2">
+        <button type="button" onclick="document.getElementById('newTaskModal').classList.add('hidden')" class="px-4 py-2 text-sm text-gray-400 hover:text-white transition-colors">Cancel</button>
+        <button type="submit" id="taskSubmitBtn" class="px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium rounded-lg transition-colors">Create & Send to Swarm</button>
+      </div>
+    </form>
+  </div>
+</div>
+{{end}}
+
+{{define "scripts"}}
+<script>
+document.getElementById('taskForm').addEventListener('submit', async function(e) {
+  e.preventDefault();
+  const btn = document.getElementById('taskSubmitBtn');
+  const errEl = document.getElementById('taskError');
+  btn.disabled = true;
+  btn.textContent = 'Creating...';
+  errEl.classList.add('hidden');
+
+  const fd = new FormData(this);
+  const data = { title: fd.get('title'), description: fd.get('description'), repo: fd.get('repo'), priority: parseInt(fd.get('priority')) };
+
+  try {
+    const res = await fetch('/api/tasks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+    if (!res.ok) { const err = await res.text(); throw new Error(err); }
+    window.location.reload();
+  } catch(err) {
+    errEl.textContent = err.message;
+    errEl.classList.remove('hidden');
+    btn.disabled = false;
+    btn.textContent = 'Create & Send to Swarm';
+  }
+});
+</script>
+{{end}}

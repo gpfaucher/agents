@@ -1,0 +1,132 @@
+{{define "title"}}Cost Analytics{{end}}
+
+{{define "content"}}
+<div class="mb-8">
+  <h1 class="text-2xl font-bold text-white">Cost Analytics</h1>
+  <p class="text-sm text-gray-500 mt-1">Track spending across your agent swarm</p>
+</div>
+
+<!-- Summary cards -->
+<div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+  <div class="stat-card rounded-xl border border-gray-800 p-5">
+    <div class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-2">Total Spend</div>
+    <div class="text-2xl font-bold text-amber-400">${{printf "%.2f" .TotalCost}}</div>
+    <div class="text-xs text-gray-500 mt-1">{{.TotalRuns}} runs</div>
+  </div>
+  <div class="stat-card rounded-xl border border-gray-800 p-5">
+    <div class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-2">This Week</div>
+    <div class="text-2xl font-bold text-white">${{printf "%.2f" .WeekCost}}</div>
+    <div class="text-xs text-gray-500 mt-1">{{.WeekRuns}} runs</div>
+  </div>
+  <div class="stat-card rounded-xl border border-gray-800 p-5">
+    <div class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-2">Today</div>
+    <div class="text-2xl font-bold text-white">${{printf "%.2f" .TodayCost}}</div>
+    <div class="text-xs text-gray-500 mt-1">{{.TodayRuns}} runs</div>
+  </div>
+  <div class="stat-card rounded-xl border border-gray-800 p-5">
+    <div class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-2">Avg per Run</div>
+    <div class="text-2xl font-bold text-white">${{printf "%.2f" .AvgCost}}</div>
+  </div>
+</div>
+
+<!-- Charts -->
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+  <div class="bg-gray-900 rounded-xl border border-gray-800 p-6">
+    <h3 class="text-sm font-semibold text-gray-300 mb-4">Daily Spend (30 days)</h3>
+    <canvas id="dailyCostChart" height="250"></canvas>
+  </div>
+  <div class="bg-gray-900 rounded-xl border border-gray-800 p-6">
+    <h3 class="text-sm font-semibold text-gray-300 mb-4">Spend by Agent</h3>
+    <canvas id="roleCostChart" height="250"></canvas>
+  </div>
+</div>
+
+<!-- Breakdown table -->
+<div class="bg-gray-900 rounded-xl border border-gray-800">
+  <div class="p-5 border-b border-gray-800">
+    <h3 class="text-sm font-semibold text-gray-300">Agent Breakdown</h3>
+  </div>
+  <div class="overflow-x-auto">
+    <table class="w-full">
+      <thead>
+        <tr class="text-xs text-gray-500 uppercase tracking-wider border-b border-gray-800">
+          <th class="px-5 py-3 text-left">Agent</th>
+          <th class="px-5 py-3 text-right">Total Cost</th>
+          <th class="px-5 py-3 text-right">Runs</th>
+          <th class="px-5 py-3 text-right">Avg Cost</th>
+          <th class="px-5 py-3 text-right">% of Total</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-800/50">
+        {{range .Summaries}}
+        <tr class="hover:bg-gray-800/30 transition-colors">
+          <td class="px-5 py-3"><span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium {{agentColor .AgentRole}}">{{agentName .AgentRole}}</span></td>
+          <td class="px-5 py-3 text-sm text-amber-400 text-right font-mono">${{printf "%.2f" .TotalCost}}</td>
+          <td class="px-5 py-3 text-sm text-gray-400 text-right">{{.RunCount}}</td>
+          <td class="px-5 py-3 text-sm text-gray-400 text-right font-mono">${{printf "%.2f" (div .TotalCost .RunCount)}}</td>
+          <td class="px-5 py-3 text-sm text-gray-400 text-right">{{printf "%.0f" (pct .TotalCost $.TotalCost)}}%</td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+</div>
+{{end}}
+
+{{define "scripts"}}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  const dailyData = {{.DailyCostsJSON}};
+  const roleData = {{.RoleCostsJSON}};
+  const colors = { pm:'#8b5cf6', engineer:'#3b82f6', tester:'#10b981', security:'#f59e0b', docs:'#ec4899' };
+  const names = { pm:'Pieter', engineer:'Joseph', tester:'Hassan', security:'Meneer', docs:'Pierre' };
+
+  if (dailyData && dailyData.length > 0) {
+    new Chart(document.getElementById('dailyCostChart'), {
+      type: 'bar',
+      data: {
+        labels: dailyData.map(d => d.date.slice(5)),
+        datasets: [{
+          label: 'Cost ($)',
+          data: dailyData.map(d => d.cost),
+          backgroundColor: '#3b82f6',
+          borderRadius: 4,
+        }]
+      },
+      options: {
+        responsive: true,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { grid: { display: false }, ticks: { color: '#64748b', font: { size: 10 } } },
+          y: { grid: { color: '#1e293b' }, ticks: { color: '#64748b', callback: v => '$'+v } },
+        }
+      }
+    });
+  }
+
+  if (roleData && roleData.length > 0) {
+    new Chart(document.getElementById('roleCostChart'), {
+      type: 'bar',
+      data: {
+        labels: roleData.map(d => names[d.agentRole] || d.agentRole),
+        datasets: [{
+          label: 'Total Cost ($)',
+          data: roleData.map(d => d.totalCost),
+          backgroundColor: roleData.map(d => colors[d.agentRole] || '#64748b'),
+          borderRadius: 4,
+        }]
+      },
+      options: {
+        responsive: true,
+        indexAxis: 'y',
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { grid: { color: '#1e293b' }, ticks: { color: '#64748b', callback: v => '$'+v } },
+          y: { grid: { display: false }, ticks: { color: '#94a3b8' } },
+        }
+      }
+    });
+  }
+});
+</script>
+{{end}}

@@ -12,31 +12,43 @@ import (
 )
 
 type Server struct {
-	store    *store.Store
-	staticFS embed.FS
+	store      *store.Store
+	staticFS   embed.FS
+	templateFS embed.FS
 }
 
-func New(s *store.Store, staticFS embed.FS) *Server {
-	return &Server{store: s, staticFS: staticFS}
+func New(s *store.Store, staticFS, templateFS embed.FS) *Server {
+	return &Server{store: s, staticFS: staticFS, templateFS: templateFS}
 }
 
 func (s *Server) Router() http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
+	r.Use(middleware.Compress(5))
 
-	h := handlers.New(s.store)
+	h := handlers.New(s.store, s.templateFS)
 
 	// Pages
-	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, "/agents", http.StatusFound)
-	})
-	r.Get("/agents", h.AgentsPage)
+	r.Get("/", h.DashboardPage)
+	r.Get("/runs", h.RunsPage)
 	r.Get("/costs", h.CostsPage)
+	r.Get("/tasks", h.TasksPage)
+	r.Get("/live", h.LivePage)
+
+	// Legacy redirects
+	r.Get("/agents", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/runs", http.StatusMovedPermanently)
+	})
 
 	// API
 	r.Post("/api/runs", h.CreateRun)
-	r.Get("/api/runs", h.ListRuns)
+	r.Get("/api/runs", h.ListRunsAPI)
+	r.Get("/api/stats", h.StatsAPI)
+	r.Post("/api/tasks", h.CreateTask)
+
+	// Agent status proxy
+	r.Get("/api/agents/status/*", h.AgentStatus)
 
 	// Static files
 	sub, _ := fs.Sub(s.staticFS, "static")

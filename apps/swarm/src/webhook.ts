@@ -12,14 +12,16 @@
  * - POST /webhooks/linear — receives Linear webhook events
  * - POST /trigger — internal: trigger immediate issue processing
  * - GET  /health — health check
+ * - GET  /status — agent status (active issues, role, uptime)
  */
 
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { createHmac } from "node:crypto";
 import type { RoleConfig } from "./roles/index.js";
-import { triggerIssue } from "./poller.js";
+import { triggerIssue, getActiveIssues } from "./poller.js";
 
 const WEBHOOK_PORT = Number(process.env.WEBHOOK_PORT) || 3000;
+const startedAt = Date.now();
 const LINEAR_WEBHOOK_SECRET = process.env.LINEAR_WEBHOOK_SECRET;
 
 /**
@@ -162,6 +164,21 @@ export function startWebhookServer(role: RoleConfig): void {
     if (req.method === "GET" && req.url === "/health") {
       res.writeHead(200, { "Content-Type": "text/plain" });
       res.end("ok");
+      return;
+    }
+
+    // Status endpoint — returns agent state for the dashboard
+    if (req.method === "GET" && req.url === "/status") {
+      const active = getActiveIssues();
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({
+        role: role.name,
+        displayName: role.displayName,
+        model: role.model,
+        uptime: Math.round((Date.now() - startedAt) / 1000),
+        activeIssues: active,
+        maxConcurrent: Number(process.env.MAX_CONCURRENT) || 1,
+      }));
       return;
     }
 

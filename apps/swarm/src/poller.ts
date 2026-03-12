@@ -22,6 +22,11 @@ const activeRepos = new Map<string, string>(); // repoName → issueIdentifier
 /** Failure count per issue — for retry logic (Fix 4) */
 const failureCounts = new Map<string, number>();
 
+/** Get list of currently active issues (for /status endpoint) */
+export function getActiveIssues(): string[] {
+  return [...activeIssues];
+}
+
 async function poll(role: RoleConfig) {
   // Check rate limit before picking up work
   if (WORK_WINDOW_ENABLED) {
