@@ -28,6 +28,8 @@ func (s *Server) Router() http.Handler {
 	r.Use(middleware.Compress(5))
 
 	h := handlers.New(s.store, s.templateFS)
+	hub := handlers.NewHub()
+	wsh := handlers.NewWsHandlers(s.store, hub)
 
 	// Pages
 	r.Get("/", h.DashboardPage)
@@ -35,6 +37,7 @@ func (s *Server) Router() http.Handler {
 	r.Get("/costs", h.CostsPage)
 	r.Get("/tasks", h.TasksPage)
 	r.Get("/live", h.LivePage)
+	r.Get("/console", h.ConsolePage)
 
 	// Legacy redirects
 	r.Get("/agents", func(w http.ResponseWriter, r *http.Request) {
@@ -46,6 +49,12 @@ func (s *Server) Router() http.Handler {
 	r.Get("/api/runs", h.ListRunsAPI)
 	r.Get("/api/stats", h.StatsAPI)
 	r.Post("/api/tasks", h.CreateTask)
+
+	// Streaming & chat
+	r.Get("/ws/stream/*", wsh.StreamHandler)
+	r.Post("/api/stream", wsh.IngestHandler)
+	r.Post("/api/chat/*", wsh.ChatHandler)
+	r.Get("/api/active-runs", wsh.ActiveRunsHandler)
 
 	// Agent status proxy
 	r.Get("/api/agents/status/*", h.AgentStatus)

@@ -1,10 +1,12 @@
 import type { RoleConfig } from "./roles/index.js";
 import { queryIssues, moveIssue } from "./tools/linear.js";
-import { invokeAgent } from "./agent.js";
+import { invokeAgent, type StreamContext } from "./agent.js";
 import { getRepoForIssue, ensureRepoCloned, type RepoContext } from "./lib/repos.js";
 import { getWaitTimeMs, isWarning } from "./lib/rate-limiter.js";
 import { sendAlert } from "./lib/alerting.js";
 import { cleanupStaleWorktrees, cleanupWorktree } from "./lib/worktree-cleanup.js";
+import { streamMessage } from "./lib/dashboard-stream.js";
+import { notify } from "./lib/notifications.js";
 
 const POLL_INTERVAL_MS = Number(process.env.POLL_INTERVAL_MS) || 2 * 60 * 1000;
 const MAX_CONCURRENT = Number(process.env.MAX_CONCURRENT) || 1;
@@ -170,9 +172,16 @@ Fetch the full issue details using linear_get_issue, then follow your workflow t
 
 Issue identifier: ${issue.identifier}${reviewHint}`;
 
+  const runKey = `${role.name}:${issue.identifier}`;
+  const streamCtx: StreamContext = { runKey, agentRole: role.name, issueIdentifier: issue.identifier };
+
+  // Notify run start
+  streamMessage(runKey, role.name, issue.identifier, "system", `Starting work on ${issue.identifier}: "${issue.title}"`);
+  notify("agents", `${role.displayName} started`, `${role.displayName} picking up ${issue.identifier}: "${issue.title}"`, { tags: ["robot_face"] });
+
   try {
     console.log(`[${role.displayName}] Starting work on ${issue.identifier} in ${repoCtx.githubRepo}`);
-    const result = await invokeAgent(prompt, role, repoCtx);
+    const result = await invokeAgent(prompt, role, repoCtx, streamCtx);
 
     // Clear failure count on success
     failureCounts.delete(issue.identifier);
@@ -182,6 +191,10 @@ Issue identifier: ${issue.identifier}${reviewHint}`;
     console.log(
       `[${role.displayName}] Completed ${issue.identifier}: ${result.numTurns} turns, $${result.costUsd.toFixed(2)}, ${durationStr}`,
     );
+
+    // Notify run complete
+    streamMessage(runKey, role.name, issue.identifier, "system", `Completed ${issue.identifier}: ${result.numTurns} turns, $${result.costUsd.toFixed(2)}, ${durationStr}`);
+    notify("agents", `${role.displayName} completed`, `${role.displayName} completed ${issue.identifier} ($${result.costUsd.toFixed(2)}, ${result.numTurns} turns)`, { tags: ["white_check_mark"] });
 
     // Post completion comment on Linear
     try {
@@ -262,6 +275,10 @@ Issue identifier: ${issue.identifier}${reviewHint}`;
     const alertMsg = failures >= MAX_RETRIES
       ? `${role.displayName} failed on ${issue.identifier} (${failures}/${MAX_RETRIES} retries exhausted): ${errMsg}`
       : `${role.displayName} failed on ${issue.identifier} (attempt ${failures}/${MAX_RETRIES}, will retry): ${errMsg}`;
+
+    // Notify failure
+    streamMessage(runKey, role.name, issue.identifier, "system", `Failed: ${errMsg}`);
+    notify("agents", `${role.displayName} failed`, `${role.displayName} failed on ${issue.identifier}: ${errMsg.slice(0, 200)}`, { priority: 4, tags: ["x"] });
 
     await sendAlert(alertMsg, {
       issue: issue.identifier,

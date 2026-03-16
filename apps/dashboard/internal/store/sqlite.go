@@ -110,6 +110,17 @@ func migrate(db *sql.DB) error {
 			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 		);
 		CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
+
+		CREATE TABLE IF NOT EXISTS agent_messages (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			run_key TEXT NOT NULL,
+			agent_role TEXT NOT NULL,
+			issue_identifier TEXT NOT NULL DEFAULT '',
+			msg_type TEXT NOT NULL,
+			content TEXT NOT NULL,
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+		);
+		CREATE INDEX IF NOT EXISTS idx_agent_messages_run ON agent_messages(run_key);
 	`)
 	return err
 }
@@ -298,4 +309,71 @@ func (s *Store) UpdateTaskLinear(id int64, linearID, identifier, url string) err
 func (s *Store) UpdateTaskStatus(id int64, status string) error {
 	_, err := s.db.Exec(`UPDATE tasks SET status=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`, status, id)
 	return err
+}
+
+// ─── Agent Messages ──────────────────────────────────────
+
+type AgentMessage struct {
+	ID              int64     `json:"id"`
+	RunKey          string    `json:"runKey"`
+	AgentRole       string    `json:"agentRole"`
+	IssueIdentifier string    `json:"issueIdentifier"`
+	MsgType         string    `json:"msgType"`
+	Content         string    `json:"content"`
+	CreatedAt       time.Time `json:"createdAt"`
+}
+
+func (s *Store) InsertMessage(msg AgentMessage) (int64, error) {
+	result, err := s.db.Exec(
+		`INSERT INTO agent_messages (run_key, agent_role, issue_identifier, msg_type, content) VALUES (?, ?, ?, ?, ?)`,
+		msg.RunKey, msg.AgentRole, msg.IssueIdentifier, msg.MsgType, msg.Content,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.LastInsertId()
+}
+
+func (s *Store) ListMessages(runKey string, limit int, afterID int64) ([]AgentMessage, error) {
+	rows, err := s.db.Query(
+		`SELECT id, run_key, agent_role, issue_identifier, msg_type, content, created_at
+		 FROM agent_messages WHERE run_key = ? AND id > ? ORDER BY id ASC LIMIT ?`,
+		runKey, afterID, limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var msgs []AgentMessage
+	for rows.Next() {
+		var m AgentMessage
+		if err := rows.Scan(&m.ID, &m.RunKey, &m.AgentRole, &m.IssueIdentifier, &m.MsgType, &m.Content, &m.CreatedAt); err != nil {
+			return nil, err
+		}
+		msgs = append(msgs, m)
+	}
+	return msgs, nil
+}
+
+func (s *Store) ActiveRuns() ([]string, error) {
+	rows, err := s.db.Query(
+		`SELECT DISTINCT run_key FROM agent_messages
+		 WHERE created_at >= datetime('now', '-2 hours')
+		 ORDER BY created_at DESC`,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var runs []string
+	for rows.Next() {
+		var rk string
+		if err := rows.Scan(&rk); err != nil {
+			return nil, err
+		}
+		runs = append(runs, rk)
+	}
+	return runs, nil
 }

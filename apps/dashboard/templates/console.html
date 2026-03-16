@@ -1,0 +1,227 @@
+{{define "title"}}Console{{end}}
+
+{{define "content"}}
+<div class="flex flex-col h-[calc(100vh-4rem)]">
+  <!-- Header -->
+  <div class="flex items-center justify-between mb-4">
+    <div>
+      <h1 class="text-2xl font-bold text-white">Console</h1>
+      <p class="text-sm text-gray-400 mt-1">Live agent output streaming & direct chat</p>
+    </div>
+    <div class="flex items-center gap-2 text-xs text-gray-500">
+      <span class="w-2 h-2 rounded-full bg-emerald-400 pulse-dot inline-block"></span>
+      Connected
+    </div>
+  </div>
+
+  <div class="flex flex-1 gap-4 min-h-0">
+    <!-- Left panel: Active runs -->
+    <div class="w-64 flex-shrink-0 bg-gray-900 rounded-lg border border-gray-800 flex flex-col">
+      <div class="p-3 border-b border-gray-800">
+        <h2 class="text-sm font-semibold text-gray-300">Active Runs</h2>
+      </div>
+      <div id="run-list" class="flex-1 overflow-y-auto scrollbar-thin p-2 space-y-1">
+        <div class="text-xs text-gray-500 p-2">Loading...</div>
+      </div>
+    </div>
+
+    <!-- Right panel: Stream output + chat -->
+    <div class="flex-1 flex flex-col bg-gray-900 rounded-lg border border-gray-800 min-w-0">
+      <!-- Stream header -->
+      <div id="stream-header" class="p-3 border-b border-gray-800 flex items-center justify-between">
+        <div class="text-sm text-gray-400">Select a run to view output</div>
+        <div id="stream-status" class="text-xs text-gray-600"></div>
+      </div>
+
+      <!-- Stream output -->
+      <div id="stream-output" class="flex-1 overflow-y-auto scrollbar-thin p-4 font-mono text-xs leading-relaxed space-y-0.5" style="min-height: 0;">
+      </div>
+
+      <!-- Chat input -->
+      <div class="p-3 border-t border-gray-800">
+        <form id="chat-form" class="flex gap-2" onsubmit="sendChat(event)">
+          <input
+            id="chat-input"
+            type="text"
+            placeholder="Send a message to the agent..."
+            class="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500"
+            disabled
+          >
+          <button
+            type="submit"
+            id="chat-send"
+            class="px-4 py-2 bg-brand-600 text-white text-sm font-medium rounded-lg hover:bg-brand-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            disabled
+          >
+            Send
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{{end}}
+
+{{define "scripts"}}
+<script>
+const msgColors = {
+  assistant: 'text-blue-300',
+  tool_use: 'text-amber-300',
+  tool_result: 'text-gray-400',
+  system: 'text-emerald-300',
+  chat_input: 'text-purple-300',
+  chat_response: 'text-cyan-300',
+  result: 'text-emerald-400',
+};
+
+const agentNames = {
+  pm: 'Pieter', engineer: 'Joseph', tester: 'Hassan', security: 'Meneer', docs: 'Pierre'
+};
+
+const agentColors = {
+  pm: 'border-purple-500/40',
+  engineer: 'border-blue-500/40',
+  tester: 'border-emerald-500/40',
+  security: 'border-amber-500/40',
+  docs: 'border-pink-500/40',
+};
+
+let currentRunKey = null;
+let ws = null;
+let lastMessageId = 0;
+
+function selectRun(runKey) {
+  if (currentRunKey === runKey) return;
+  currentRunKey = runKey;
+  lastMessageId = 0;
+
+  // Update UI
+  document.querySelectorAll('.run-item').forEach(el => {
+    el.classList.toggle('bg-gray-800', el.dataset.runKey === runKey);
+    el.classList.toggle('text-white', el.dataset.runKey === runKey);
+  });
+
+  const parts = runKey.split(':');
+  const role = parts[0];
+  const issue = parts.slice(1).join(':');
+  const name = agentNames[role] || role;
+
+  document.getElementById('stream-header').innerHTML =
+    `<div class="text-sm font-medium text-white">${name} <span class="text-gray-400 font-normal">working on</span> ${issue}</div>
+     <div id="stream-status" class="text-xs text-gray-600"></div>`;
+
+  document.getElementById('stream-output').innerHTML = '';
+  document.getElementById('chat-input').disabled = false;
+  document.getElementById('chat-send').disabled = false;
+
+  connectWebSocket(runKey);
+}
+
+function connectWebSocket(runKey) {
+  if (ws) {
+    ws.close();
+    ws = null;
+  }
+
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const url = `${proto}//${location.host}/ws/stream/${runKey}?after=${lastMessageId}`;
+
+  ws = new WebSocket(url);
+
+  ws.onmessage = (event) => {
+    const msg = JSON.parse(event.data);
+    appendMessage(msg);
+    if (msg.id > lastMessageId) lastMessageId = msg.id;
+  };
+
+  ws.onclose = () => {
+    const status = document.getElementById('stream-status');
+    if (status) status.textContent = 'Disconnected — reconnecting...';
+    if (currentRunKey === runKey) {
+      setTimeout(() => connectWebSocket(runKey), 3000);
+    }
+  };
+
+  ws.onopen = () => {
+    const status = document.getElementById('stream-status');
+    if (status) status.textContent = 'Connected';
+  };
+}
+
+function appendMessage(msg) {
+  const output = document.getElementById('stream-output');
+  const div = document.createElement('div');
+  const colorClass = msgColors[msg.msgType] || 'text-gray-300';
+
+  const time = new Date(msg.createdAt).toLocaleTimeString('en-US', { hour12: false });
+  const prefix = msg.msgType === 'chat_input' ? '> ' : '';
+  const typeLabel = msg.msgType === 'chat_input' ? 'you' : msg.msgType;
+
+  div.className = `${colorClass} break-words`;
+  div.innerHTML = `<span class="text-gray-600 select-none">${time}</span> <span class="text-gray-500 select-none">[${typeLabel}]</span> ${prefix}${escapeHtml(msg.content)}`;
+
+  output.appendChild(div);
+
+  // Auto-scroll if near bottom
+  const isNearBottom = output.scrollHeight - output.scrollTop - output.clientHeight < 100;
+  if (isNearBottom) {
+    output.scrollTop = output.scrollHeight;
+  }
+}
+
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+function sendChat(e) {
+  e.preventDefault();
+  const input = document.getElementById('chat-input');
+  const content = input.value.trim();
+  if (!content || !currentRunKey) return;
+
+  fetch(`/api/chat/${currentRunKey}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content }),
+  });
+
+  input.value = '';
+}
+
+function fetchActiveRuns() {
+  fetch('/api/active-runs')
+    .then(r => r.json())
+    .then(runs => {
+      const list = document.getElementById('run-list');
+      if (!runs || runs.length === 0) {
+        list.innerHTML = '<div class="text-xs text-gray-500 p-2">No active runs</div>';
+        return;
+      }
+
+      list.innerHTML = runs.map(runKey => {
+        const parts = runKey.split(':');
+        const role = parts[0];
+        const issue = parts.slice(1).join(':');
+        const name = agentNames[role] || role;
+        const borderColor = agentColors[role] || 'border-gray-500/40';
+        const isActive = runKey === currentRunKey;
+        return `<button
+          class="run-item w-full text-left px-3 py-2 rounded-md text-xs border-l-2 ${borderColor} hover:bg-gray-800 transition-colors ${isActive ? 'bg-gray-800 text-white' : 'text-gray-400'}"
+          data-run-key="${runKey}"
+          onclick="selectRun('${runKey}')"
+        >
+          <div class="font-medium">${name}</div>
+          <div class="text-gray-500 truncate">${issue}</div>
+        </button>`;
+      }).join('');
+    })
+    .catch(() => {});
+}
+
+// Poll active runs every 5 seconds
+fetchActiveRuns();
+setInterval(fetchActiveRuns, 5000);
+</script>
+{{end}}

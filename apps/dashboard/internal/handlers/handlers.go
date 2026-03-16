@@ -109,7 +109,7 @@ type Handlers struct {
 func New(s *store.Store, templateFS embed.FS) *Handlers {
 	h := &Handlers{store: s, templates: make(map[string]*template.Template)}
 
-	pages := []string{"dashboard", "runs", "costs", "tasks", "live"}
+	pages := []string{"dashboard", "runs", "costs", "tasks", "live", "console"}
 	for _, p := range pages {
 		tmpl, err := template.New("").Funcs(funcMap).ParseFS(templateFS, "templates/layout.html", "templates/"+p+".html")
 		if err != nil {
@@ -211,6 +211,10 @@ func (h *Handlers) TasksPage(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handlers) LivePage(w http.ResponseWriter, r *http.Request) {
 	h.render(w, "live", map[string]any{})
+}
+
+func (h *Handlers) ConsolePage(w http.ResponseWriter, r *http.Request) {
+	h.render(w, "console", map[string]any{})
 }
 
 // ─── API ──────────────────────────────────────────────────

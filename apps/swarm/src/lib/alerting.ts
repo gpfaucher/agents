@@ -1,12 +1,17 @@
 /**
  * Alerting — send notifications when agents fail or get stuck.
- * Supports Slack and Discord webhook formats.
+ * Supports Slack, Discord webhook formats, and ntfy.sh push notifications.
  */
+
+import { notify } from "./notifications.js";
 
 const ALERT_WEBHOOK_URL = process.env.ALERT_WEBHOOK_URL;
 
 export async function sendAlert(message: string, extra?: Record<string, unknown>): Promise<void> {
   console.error(`[alert] ${message}`);
+
+  // Send via ntfy as well
+  notify("agents-alerts", "Agent Alert", message, { priority: 4, tags: ["warning"] });
 
   if (!ALERT_WEBHOOK_URL) return;
 

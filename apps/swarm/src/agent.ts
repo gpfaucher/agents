@@ -6,6 +6,8 @@ import {
 } from "@anthropic-ai/claude-agent-sdk";
 import { traceAgent } from "./lib/tracing.js";
 import { updateRateLimitState } from "./lib/rate-limiter.js";
+import { streamMessage } from "./lib/dashboard-stream.js";
+import { getPendingMessages } from "./webhook.js";
 import type { RoleConfig } from "./roles/index.js";
 import type { RepoContext } from "./lib/repos.js";
 
@@ -14,6 +16,12 @@ export interface AgentResult {
   costUsd: number;
   numTurns: number;
   durationMs: number;
+}
+
+export interface StreamContext {
+  runKey: string;
+  agentRole: string;
+  issueIdentifier: string;
 }
 
 function formatMessage(message: any): string {
@@ -84,6 +92,7 @@ export async function invokeAgent(
   prompt: string,
   role: RoleConfig,
   repo?: RepoContext,
+  streamCtx?: StreamContext,
 ): Promise<AgentResult> {
   return traceAgent(
     `${role.name}-invoke`,
@@ -95,11 +104,35 @@ export async function invokeAgent(
       let numTurns = 0;
       let durationMs = 0;
 
+      // Helper to stream messages to dashboard
+      const stream = (msgType: string, content: string) => {
+        if (streamCtx) {
+          streamMessage(streamCtx.runKey, streamCtx.agentRole, streamCtx.issueIdentifier, msgType, content);
+        }
+      };
+
+      // check_human_messages tool — lets agent read pending chat messages
+      const checkHumanMessagesTool = {
+        name: "check_human_messages",
+        description: "Check for pending messages from the human operator sent via the dashboard console. Call this periodically to see if the operator has sent you instructions or feedback.",
+        parameters: { type: "object" as const, properties: {} },
+        execute: async () => {
+          if (!streamCtx) return { messages: [] };
+          const msgs = getPendingMessages(streamCtx.runKey);
+          if (msgs.length > 0) {
+            stream("chat_response", `Agent read ${msgs.length} message(s) from operator`);
+          }
+          return { messages: msgs };
+        },
+      };
+
+      const allTools = [...role.tools, checkHumanMessagesTool];
+
       const mcpServerName = `${role.name}-tools`;
       const toolServer = createSdkMcpServer({
         name: mcpServerName,
         version: "1.0.0",
-        tools: role.tools,
+        tools: allTools,
       });
 
       const agents: Record<string, any> = {};
@@ -134,7 +167,7 @@ export async function invokeAgent(
           permissionMode: "bypassPermissions",
           allowDangerouslySkipPermissions: true,
           maxTurns: role.maxTurns,
-          systemPrompt: role.systemPrompt,
+          systemPrompt: role.systemPrompt + (streamCtx ? "\n\nYou have a check_human_messages tool available. Call it periodically (every few turns) to check if the human operator has sent you messages or instructions via the dashboard console." : ""),
           settingSources: ["project"],
           allowedTools: ["Skill"],
           effort: role.effort ?? "high",
@@ -156,6 +189,30 @@ export async function invokeAgent(
         for await (const message of session) {
           console.log(formatMessage(message));
 
+          // Stream to dashboard
+          if (message.type === "assistant") {
+            const content = (message as any)?.message?.content;
+            if (Array.isArray(content)) {
+              const text = content.filter((b: any) => b.type === "text").map((b: any) => b.text).join("").trim();
+              if (text) stream("assistant", text.length > 1000 ? text.slice(0, 1000) + "..." : text);
+              const tools = content.filter((b: any) => b.type === "tool_use").map((b: any) => b.name);
+              if (tools.length) stream("tool_use", tools.join(", "));
+            }
+          } else if (message.type === "user") {
+            const content = (message as any)?.message?.content;
+            if (Array.isArray(content)) {
+              const toolResults = content.filter((b: any) => b.type === "tool_result");
+              if (toolResults.length) {
+                for (const tr of toolResults) {
+                  const summary = typeof tr.content === "string"
+                    ? tr.content.slice(0, 300)
+                    : JSON.stringify(tr.content).slice(0, 300);
+                  stream("tool_result", summary);
+                }
+              }
+            }
+          }
+
           // Track rate limit events for work window management
           if (message.type === "rate_limit_event") {
             updateRateLimitState(message as any);
@@ -168,8 +225,10 @@ export async function invokeAgent(
             durationMs = msg.duration_ms ?? 0;
             if (msg.subtype === "success") {
               resultText = msg.result;
+              stream("result", `Completed: ${resultText.slice(0, 500)}`);
             } else {
               resultText = `Error: ${msg.errors?.join("; ") ?? msg.subtype}`;
+              stream("system", resultText);
               console.error(
                 `[sdk] result error:`,
                 JSON.stringify(msg).slice(0, 500),

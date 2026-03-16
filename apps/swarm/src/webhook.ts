@@ -24,6 +24,18 @@ const WEBHOOK_PORT = Number(process.env.WEBHOOK_PORT) || 3000;
 const startedAt = Date.now();
 const LINEAR_WEBHOOK_SECRET = process.env.LINEAR_WEBHOOK_SECRET;
 
+/** In-memory queue for chat messages from the dashboard, keyed by runKey */
+const pendingMessages = new Map<string, string[]>();
+
+/** Get and clear pending messages for a runKey (called by agent.ts via check_human_messages tool) */
+export function getPendingMessages(runKey: string): string[] {
+  const msgs = pendingMessages.get(runKey) ?? [];
+  if (msgs.length > 0) {
+    pendingMessages.delete(runKey);
+  }
+  return msgs;
+}
+
 /**
  * Parse AGENT_ENDPOINTS env var for fan-out routing.
  * Format: "pm=http://agent-architect:3000,engineer=http://agent-builder:3000,..."
@@ -179,6 +191,37 @@ export function startWebhookServer(role: RoleConfig): void {
         activeIssues: active,
         maxConcurrent: Number(process.env.MAX_CONCURRENT) || 1,
       }));
+      return;
+    }
+
+    // Chat messages endpoint — receives messages from dashboard for agents
+    if (req.method === "POST" && req.url?.startsWith("/messages/")) {
+      try {
+        const runKey = req.url.slice("/messages/".length);
+        const body = await readBody(req);
+        const data = JSON.parse(body) as { content: string };
+        if (data.content) {
+          const queue = pendingMessages.get(runKey) ?? [];
+          queue.push(data.content);
+          pendingMessages.set(runKey, queue);
+          console.log(`[webhook] Queued chat message for ${runKey}: ${data.content.slice(0, 100)}`);
+        }
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ queued: true }));
+      } catch (err) {
+        console.error("[webhook] Messages error:", err);
+        res.writeHead(400);
+        res.end("Bad request");
+      }
+      return;
+    }
+
+    // Get pending messages for a runKey
+    if (req.method === "GET" && req.url?.startsWith("/messages/")) {
+      const runKey = req.url.slice("/messages/".length);
+      const msgs = getPendingMessages(runKey);
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ messages: msgs }));
       return;
     }
 
