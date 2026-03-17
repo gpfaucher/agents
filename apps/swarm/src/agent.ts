@@ -1,9 +1,11 @@
 import {
   query,
+  tool,
   createSdkMcpServer,
   type HookCallback,
   type SubagentStopHookInput,
 } from "@anthropic-ai/claude-agent-sdk";
+import { z } from "zod";
 import { traceAgent } from "./lib/tracing.js";
 import { updateRateLimitState } from "./lib/rate-limiter.js";
 import { streamMessage } from "./lib/dashboard-stream.js";
@@ -112,19 +114,20 @@ export async function invokeAgent(
       };
 
       // check_human_messages tool — lets agent read pending chat messages
-      const checkHumanMessagesTool = {
-        name: "check_human_messages",
-        description: "Check for pending messages from the human operator sent via the dashboard console. Call this periodically to see if the operator has sent you instructions or feedback.",
-        parameters: { type: "object" as const, properties: {} },
-        execute: async () => {
-          if (!streamCtx) return { messages: [] };
+      const checkHumanMessagesTool = tool(
+        "check_human_messages",
+        "Check for pending messages from the human operator sent via the dashboard console. Call this periodically to see if the operator has sent you instructions or feedback.",
+        {},
+        async () => {
+          if (!streamCtx) return "No messages";
           const msgs = getPendingMessages(streamCtx.runKey);
           if (msgs.length > 0) {
             stream("chat_response", `Agent read ${msgs.length} message(s) from operator`);
+            return `Messages from operator:\n${msgs.join("\n")}`;
           }
-          return { messages: msgs };
+          return "No pending messages";
         },
-      };
+      );
 
       const allTools = [...role.tools, checkHumanMessagesTool];
 
